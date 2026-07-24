@@ -20,7 +20,7 @@ def main():
     # Google Sheets API 인증
     gc = gspread.service_account_from_dict(SERVICE_ACCOUNT_INFO)
     sh = gc.open_by_url(SPREADSHEET_URL)
-    worksheet = sh.worksheet("시트2") # 데이터가 들어있는 시트 이름
+    worksheet = sh.worksheet("검색 시트") # 데이터가 들어있는 시트 이름
 
     # Gemini Client 설정
     client = genai.Client(api_key=GEMINI_API_KEY)

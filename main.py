@@ -38,9 +38,11 @@ def main():
     print("\n==================================================")
     print(f"🚀 개인정보 보호법 감시 에이전트 시작 (총 {total_records}건)")
     print("==================================================\n")
-
     
-    for idx, row in enumerate(records, start=2): # 헤더가 1행이므로 2행부터 시작
+    for i, row in enumerate(records):
+        current_idx = i + 1  # 1, 2, 3 ... (진행률 계산용 순번)
+        row_idx = i + 2      # 구글 시트의 실제 행 번호 (헤더가 1행이므로 2행부터 시작)
+        
         country = row.get("국가 / 지역 (Country/Region)")
         law_name = row.get("주요 법률명 (Law Name)")
         current_status = row.get("최근 동향 및 개정사항 (Recent Updates)", "")

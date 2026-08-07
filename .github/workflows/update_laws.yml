@@ -12,10 +12,10 @@ jobs:
 
     steps:
     - name: Check out repository
-      uses: actions/checkout@v4 # 또는 최신 major 버전 유지
+      uses: actions/checkout@v5 # 또는 최신 major 버전 유지
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
           python-version: '3.11' # 누락되었던 파이썬 버전 지정 추가
           

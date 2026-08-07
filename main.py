@@ -17,30 +17,42 @@ class LawUpdateCheck(BaseModel):
     updated: bool
     summary: str
 
-def generate_with_retry(client, prompt, max_retries=3):
-    """429 Rate Limit 발생 시 대기 후 재시도하는 함수"""
-    delay = 10  # 대기 시간(초)
-    for attempt in range(max_retries):
-        try:
-            # gemini-1.5-flash 또는 gemini-2.0-flash 사용
-            response = client.models.generate_content(
-                model="gemini-1.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=LawUpdateCheck
+def generate_with_fallback(client, prompt, max_retries=3):
+    """
+    429/404 에러 발생 시 최신 모델 순서대로 자동 우회(Fallback) 및 대기 재시도하는 함수
+    """
+    # 순차적으로 시도할 지원 모델 후보 목록
+    candidate_models = ["gemini-2.5-flash", "gemini-2.0-flash"]
+    
+    for model_name in candidate_models:
+        delay = 5  # 대기 시간(초)
+        for attempt in range(max_retries):
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=LawUpdateCheck
+                    )
                 )
-            )
-            return json.loads(response.text)
-        except Exception as e:
-            err_msg = str(e)
-            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-                print(f"    ⚠️ [Quota 초과] {delay}초 대기 후 재시도합니다... ({attempt + 1}/{max_retries})")
-                time.sleep(delay)
-                delay *= 2  # 대기 시간 증가
-            else:
-                raise e
-    raise Exception("최대 재시도 횟수를 초과했습니다.")
+                return json.loads(response.text)
+            except Exception as e:
+                err_msg = str(e)
+                # 404 모델 찾을 수 없음 -> 다음 후보 모델로 변경
+                if "404" in err_msg or "NOT_FOUND" in err_msg:
+                    print(f"    ⚠️ [{model_name} 미지원 (404)] 다음 모델 후보로 우회합니다...")
+                    break  # 안쪽 루프 탈출하여 다음 model_name 시도
+                
+                # 429 Quota 초과 -> 지정 시간 대기 후 동일 모델 재시도
+                elif "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+                    print(f"    ⚠️ [Quota 초과] {delay}초 대기 후 재시도합니다... ({attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                    delay *= 2
+                else:
+                    raise e
+
+    raise Exception("모든 지원 모델 시도 실패 또는 Quota 초과로 요청을 처리할 수 없습니다.")
 
 def main():
     start_time = time.time()
@@ -101,7 +113,7 @@ def main():
         """
 
         try:
-            result = generate_with_retry(client, prompt)
+            result = generate_with_fallback(client, prompt)
 
             if result.get("updated") and result.get("summary"):
                 summary = result["summary"]
@@ -119,7 +131,7 @@ def main():
             stats["failed"] += 1
 
         print("-" * 50)
-        time.sleep(4)  # Rate Limit 안전 범주 유지를 위해 4초 대기
+        time.sleep(3)  # Rate Limit 안전 범주 유지를 위해 3초 대기
 
     # 실행 결과 최종 요약
     elapsed_time = round(time.time() - start_time, 2)

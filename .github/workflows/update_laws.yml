@@ -16,7 +16,9 @@ jobs:
 
     - name: Set up Python
       uses: actions/setup-python@v5
-
+      with:
+          python-version: '3.11' # 누락되었던 파이썬 버전 지정 추가
+          
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip

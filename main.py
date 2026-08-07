@@ -38,11 +38,11 @@ def main():
     print("\n==================================================")
     print(f"🚀 개인정보 보호법 감시 에이전트 시작 (총 {total_records}건)")
     print("==================================================\n")
-    
+
     for i, row in enumerate(records):
         current_idx = i + 1  # 1, 2, 3 ... (진행률 계산용 순번)
         row_idx = i + 2      # 구글 시트의 실제 행 번호 (헤더가 1행이므로 2행부터 시작)
-        
+
         country = row.get("국가 / 지역 (Country/Region)")
         law_name = row.get("주요 법률명 (Law Name)")
         current_status = row.get("최근 동향 및 개정사항 (Recent Updates)", "")
@@ -71,33 +71,17 @@ def main():
 
         [지시 사항]
         1. 해당 국가의 {law_name} 관련하여 최근 신규 법 제/개정, 법안 발효, 주요 가이드라인/시행령 발표나 중대한 규제 변화가 있었는지 검토하라.
-        2. 기존 기록 내용과 비교하여 실제 의미있는 법률 개정이나 변화가 확인된 경우에만 `updated`를 true로 설정하고, 1~2문장으로 한국어로 요약하라.
-        3. 특별한 변동 사항이 없다면 `updated`를 false로 설정하라.
+        2. 기존 기록 내용과 비교하여 실제 의미있는 법률 개정이나 변화가 확인된 경우에만 `updated`를 true로 설정하고, 1~2문장으로 한국어로 요약하여 `summary`에 담아라.
+        3. 특별한 변동 사항이 없다면 `updated`를 false로 설정하고 `summary`는 빈 문자열("")로 입력하라.
         """
 
         try:
-            # 1. Search Grounding으로 검토
-            search_response = client.models.generate_content(
-                model="gemini-2.5-flash",
+            # Google Search Grounding과 Structured Output을 한 번의 API 호출로 처리 (gemini-2.0-flash 사용)
+            response = client.models.generate_content(
+                model="gemini-2.0-flash",
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    tools=[{"google_search": {}}]
-                )
-            )
-            raw_analysis = search_response.text
-
-            # 2. 결과를 JSON Schema 형태로 정제
-            struct_prompt = f"""
-            아래 분석 결과를 바탕으로 구조화된 JSON으로 변환하라.
-            
-            [분석 내용]
-            {raw_analysis}
-            """
-
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=struct_prompt,
-                config=types.GenerateContentConfig(
+                    tools=[{"google_search": {}}],
                     response_mime_type="application/json",
                     response_schema=LawUpdateCheck
                 )
@@ -121,7 +105,7 @@ def main():
             stats["failed"] += 1
 
         print("-" * 50)
-        time.sleep(1)  # API Rate Limit 방지용 대기
+        time.sleep(3)  # Rate Limit(초당/분당 호출 제한) 방지를 위한 3초 대기
 
     # 실행 결과 최종 요약
     elapsed_time = round(time.time() - start_time, 2)

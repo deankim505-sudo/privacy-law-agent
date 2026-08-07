@@ -17,6 +17,31 @@ class LawUpdateCheck(BaseModel):
     updated: bool
     summary: str
 
+def generate_with_retry(client, prompt, max_retries=3):
+    """429 Rate Limit 발생 시 대기 후 재시도하는 함수"""
+    delay = 10  # 대기 시간(초)
+    for attempt in range(max_retries):
+        try:
+            # gemini-1.5-flash 또는 gemini-2.0-flash 사용
+            response = client.models.generate_content(
+                model="gemini-1.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=LawUpdateCheck
+                )
+            )
+            return json.loads(response.text)
+        except Exception as e:
+            err_msg = str(e)
+            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+                print(f"    ⚠️ [Quota 초과] {delay}초 대기 후 재시도합니다... ({attempt + 1}/{max_retries})")
+                time.sleep(delay)
+                delay *= 2  # 대기 시간 증가
+            else:
+                raise e
+    raise Exception("최대 재시도 횟수를 초과했습니다.")
+
 def main():
     start_time = time.time()
     # Google Sheets API 인증
@@ -62,7 +87,7 @@ def main():
         print(f"  └─ 🔍 [조사 중] {country} - {law_name}")
 
         prompt = f"""
-        너는 각국의 개인정보 보호법 개정 동향을 감시하는 법률 에이전트이다.
+        너는 각국의 개인정보 보호법 개정 동향을 감시하는 전문 법률 에이전트이다.
 
         [조사 대상]
         - 국가/지역: {country}
@@ -70,24 +95,13 @@ def main():
         - 현재 기록된 동향: "{current_status}"
 
         [지시 사항]
-        1. 해당 국가의 {law_name} 관련하여 최근 신규 법 제/개정, 법안 발효, 주요 가이드라인/시행령 발표나 중대한 규제 변화가 있었는지 검토하라.
-        2. 기존 기록 내용과 비교하여 실제 의미있는 법률 개정이나 변화가 확인된 경우에만 `updated`를 true로 설정하고, 1~2문장으로 한국어로 요약하여 `summary`에 담아라.
-        3. 특별한 변동 사항이 없다면 `updated`를 false로 설정하고 `summary`는 빈 문자열("")로 입력하라.
+        1. 해당 국가의 {law_name} 관련하여 최신 주요 제/개정, 법안 발효, 시행령/가이드라인 발표 등 의미 있는 변동 사항이 있는지 검토하라.
+        2. 기존 기록된 동향과 비교하여 새로운 주요 변동 사항이 있다면 `updated`를 true로 설정하고, 1~2문장으로 한국어로 요약하여 `summary`에 담아라.
+        3. 변동 사항이 없거나 최신 상태라면 `updated`를 false로 설정하고 `summary`는 빈 문자열("")로 입력하라.
         """
 
         try:
-            # Google Search Grounding과 Structured Output을 한 번의 API 호출로 처리 (gemini-2.0-flash 사용)
-            response = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    tools=[{"google_search": {}}],
-                    response_mime_type="application/json",
-                    response_schema=LawUpdateCheck
-                )
-            )
-
-            result = json.loads(response.text)
+            result = generate_with_retry(client, prompt)
 
             if result.get("updated") and result.get("summary"):
                 summary = result["summary"]
@@ -105,7 +119,7 @@ def main():
             stats["failed"] += 1
 
         print("-" * 50)
-        time.sleep(3)  # Rate Limit(초당/분당 호출 제한) 방지를 위한 3초 대기
+        time.sleep(4)  # Rate Limit 안전 범주 유지를 위해 4초 대기
 
     # 실행 결과 최종 요약
     elapsed_time = round(time.time() - start_time, 2)
